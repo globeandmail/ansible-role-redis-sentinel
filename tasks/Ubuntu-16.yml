@@ -1,0 +1,157 @@
+---
+- name: Ubuntu-16 | check if redis-server exists
+  stat:
+    path=/usr/local/bin/redis-server
+  register: stat_redis_server
+
+#
+# RUN BLOCK ON INIT INSTALL
+#
+- block:
+  - name: Ubuntu-16 | create redis group
+    group:
+     name=redis
+
+  - name: Ubuntu-16 | create redis user
+    user:
+     name=redis
+     shell=/bin/false
+     groups=redis
+     system=yes
+     createhome=no
+
+  - name: Ubuntu-16 | create required directories
+    file:
+     path={{ item }}
+     state=directory
+     owner=redis
+     group=redis
+     mode=0770
+    with_items:
+     - /etc/redis
+     - /var/run/redis
+     - /var/log/redis
+     - /var/redis
+     - /var/lib/redis
+     - /var/lib/redis-sentinel
+
+  - name: Ubuntu-16 | install the build and test dependencies
+    apt:
+      name={{ item }}
+      state=present
+      update_cache=yes
+    with_items:
+      - build-essential
+      - tcl
+
+  - name: Ubuntu-16 | download and unarchive redis
+    unarchive:
+      src={{ redis_src }}
+      dest=/opt
+      group=redis
+      owner=redis
+      remote_src=yes
+
+  - name: Ubuntu-16 | make
+    make:
+      chdir=/opt/redis-4.0.9
+
+  - name: Ubuntu-16 | make test
+    make:
+      chdir=/opt/redis-4.0.9
+      target=test
+
+  - name: Ubuntu-16 | make install
+    make:
+      chdir=/opt/redis-4.0.9
+      target=install
+
+  - name: Ubuntu-16 | disable transparent_hugepage until reboot
+    shell: echo never > /sys/kernel/mm/transparent_hugepage/enabled && echo never > /sys/kernel/mm/transparent_hugepage/defrag
+    ignore_errors: true
+    changed_when: false
+
+  - name: Ubuntu-16 | make sure transparent_hugepage disabled on reboots
+    lineinfile:
+      path=/etc/rc.local
+      line='echo never > /sys/kernel/mm/transparent_hugepage/enabled'
+      insertbefore='exit 0'
+
+  - name: Ubuntu-16 | update net.core.somaxconn
+    sysctl:
+      name=net.core.somaxconn
+      value=65535
+      state=present
+      reload=yes
+
+  - name: Ubuntu-16 | update vm.overcommit_memory
+    sysctl:
+      name=vm.overcommit_memory
+      value=1
+      state=present
+      reload=yes
+
+  - name: Ubuntu-16 | update fs.file-max
+    sysctl:
+      name=fs.file-max
+      value=16192
+      state=present
+      reload=yes
+
+  when: not stat_redis_server.stat.exists
+#
+# EOF BLOCK
+#
+
+- name: Ubuntu-16 | copy the redis.conf
+  template:
+    src={{ redis_conf }}
+    dest=/etc/redis/redis.conf
+    group=redis
+    owner=redis
+    force=no
+
+- name: Ubuntu-16 | copy the notification-script script
+  template:
+    src={{ redis_notification_script }}
+    dest=/var/redis/notify.sh
+    group=redis
+    owner=redis
+    mode=0770
+  when: redis_notification_script is defined
+
+- name: Ubuntu-16 | copy the client-reconfig-script script
+  template:
+    src={{ redis_client_reconfig_script }}
+    dest=/var/redis/reconfig.sh
+    group=redis
+    owner=redis
+    mode=0770
+  when: redis_client_reconfig_script is defined
+
+- name: Ubuntu-16 | copy the sentinel.conf
+  template:
+    src={{ redis_sentinel_conf }}
+    dest=/etc/redis/sentinel.conf
+    group=redis
+    owner=redis
+    force=no
+
+- name: Ubuntu-16 | create a redis systemd unit file
+  template:
+    src=Ubuntu-16/redis.service
+    dest=/etc/systemd/system/redis.service
+
+- name: Ubuntu-16 | create a redis-sentinel systemd unit file
+  template:
+    src=Ubuntu-16/redis-sentinel.service
+    dest=/etc/systemd/system/redis-sentinel.service
+
+- name: Ubuntu-16 | start and enable service
+  systemd:
+    name={{ item }}
+    state=started
+    enabled=yes
+  with_items:
+    - redis
+    - redis-sentinel

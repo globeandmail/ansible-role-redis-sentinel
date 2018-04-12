@@ -1,0 +1,10 @@
+---
+- name: check for supported operating system on target
+  fail:
+    msg: "the operating system of the target machine ({{ inventory_hostname }}) is not currently supported."
+  when: ( ansible_distribution != "Ubuntu" and ansible_distribution_major_version not in [16] )
+
+
+- name: include distro specific tasks
+  include_tasks: "{{ ansible_distribution }}-{{ ansible_distribution_major_version }}.yml"
+  when: redis_conf is defined and redis_sentinel_conf is defined
