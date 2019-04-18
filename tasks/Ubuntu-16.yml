@@ -166,7 +166,7 @@
   cron:
     name: "Backup dump.rdb"
     minute: "{{ redis_backup_frequency }}"
-    job: "rsync -av /var/lib/redis/dump.rdb /opt/redis_backup/dump.rdb.`date +%Y-%m-%d-%I-%M-%S`"
+    job: "rsync -av /var/lib/redis/dump.rdb /opt/redis_backup/dump.rdb.`date +\%Y-\%m-\%d-\%I-\%M-\%S`"
   when: redis_backup is defined
 
 - name: Ensure only 3 versions of the backup is kept
