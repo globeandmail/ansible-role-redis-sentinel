@@ -155,3 +155,23 @@
   with_items:
     - redis
     - redis-sentinel
+
+- name: Ensure Backup directory exists
+  file:
+    path: /opt/redis_backup
+    state: directory
+  when: redis_backup is defined
+
+- name: "Create Backup job that runs every {{ redis_backup_frequency }} minutes"
+  cron:
+    name: "Backup dump.rdb"
+    minute: "{{ redis_backup_frequency }}"
+    job: "rsync -av /var/lib/redis/dump.rdb /opt/redis_backup/dump.rdb.`date +%Y-%m-%d-%I-%M-%S`"
+  when: redis_backup is defined
+
+- name: Ensure only 3 versions of the backup is kept
+  cron:
+    name: "Clean up Backup files"
+    minute: 0
+    job: "find /opt/redis_backup -name 'dump*' -type f -mmin +{{ redis_backup_clean }} -delete"
+  when: redis_backup is defined
