@@ -172,6 +172,6 @@
 - name: Ensure only 3 versions of the backup is kept
   cron:
     name: "Clean up Backup files"
-    minute: 0
+    minute: "*/10"
     job: "find /opt/redis_backup -name 'dump*' -type f -mmin +{{ redis_backup_clean }} -delete"
   when: redis_backup is defined
