@@ -1,2 +1,2 @@
 ---
-redis_src: http://download.redis.io/releases/redis-4.0.9.tar.gz
+redis_src: https://download.redis.io/releases/redis-6.2.4.tar.gz

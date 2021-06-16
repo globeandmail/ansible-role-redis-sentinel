@@ -1,0 +1,157 @@
+---
+- name: Ubuntu-20 | check if redis-server exists
+  stat:
+    path=/usr/local/bin/redis-server
+  register: stat_redis_server
+
+#
+# RUN BLOCK ON INIT INSTALL
+#
+- block:
+  - name: Ubuntu-20 | create redis group
+    group:
+     name: redis
+
+  - name: Ubuntu-20 | create redis user
+    user:
+     name: redis
+     shell: /bin/false
+     groups: redis
+     system: yes
+     createhome: no
+
+  - name: Ubuntu-20 | create required directories
+    file:
+     path: {{ item }}
+     state: directory
+     owner: redis
+     group: redis
+     mode: 0770
+    with_items:
+     - /etc/redis
+     - /var/run/redis
+     - /var/log/redis
+     - /var/redis
+     - /var/lib/redis
+     - /var/lib/redis-sentinel
+
+  - name: Ubuntu-20 | install the build and test dependencies
+    apt:
+      pkg:
+        - pkg-config
+        - build-essential
+        - tcl
+      state: latest
+      update_cache: yes
+
+  - name: Ubuntu-20 | download and unarchive redis
+    unarchive:
+      src: {{ redis_src }}
+      dest: /opt
+      group: redis
+      owner: redis
+      remote_src: yes
+
+  - name: Ubuntu-20 | clean up make
+    make:
+      target: distclean
+      chdir: /opt/redis-6.2.4
+
+  - name: Ubuntu-20 | make
+    make:
+      chdir: /opt/redis-6.2.4
+
+  - name: Ubuntu-20 | make test
+    make:
+      chdir: /opt/redis-6.2.4
+      target: test
+
+  - name: Ubuntu-20 | make install
+    make:
+      chdir: /opt/redis-6.2.4
+      target: install
+
+  - name: Ubuntu-20 | update vm.overcommit_memory
+    sysctl:
+      name: vm.overcommit_memory
+      value: 1
+      state: present
+      reload: yes
+
+  when: not stat_redis_server.stat.exists
+#
+# EOF BLOCK
+#
+
+- name: Ubuntu-20 | copy the redis.conf
+  template:
+    src: {{ redis_conf }}
+    dest: /etc/redis/redis.conf
+    group: redis
+    owner: redis
+    force: yes
+
+- name: Ubuntu-20 | copy the notification-script script
+  template:
+    src: {{ redis_notification_script }}
+    dest: /var/redis/notify.sh
+    group: redis
+    owner: redis
+    mode: 0770
+  when: redis_notification_script is defined
+
+- name: Ubuntu-20 | copy the client-reconfig-script script
+  template:
+    src: {{ redis_client_reconfig_script }}
+    dest: /var/redis/reconfig.sh
+    group: redis
+    owner: redis
+    mode: 0770
+  when: redis_client_reconfig_script is defined
+
+- name: Ubuntu-20 | copy the sentinel.conf
+  template:
+    src: {{ redis_sentinel_conf }}
+    dest: /etc/redis/sentinel.conf
+    group: redis
+    owner: redis
+    force: yes
+
+- name: Ubuntu-20 | create a redis systemd unit file
+  template:
+    src: Ubuntu-20/redis.service
+    dest: /etc/systemd/system/redis.service
+
+- name: Ubuntu-20 | create a redis-sentinel systemd unit file
+  template:
+    src: Ubuntu-20/redis-sentinel.service
+    dest: /etc/systemd/system/redis-sentinel.service
+
+- name: Ubuntu-20 | start and enable service
+  systemd:
+    name: {{ item }}
+    state: started
+    enabled: yes
+  with_items:
+    - redis
+    - redis-sentinel
+
+- name: Ensure Backup directory exists
+  file:
+    path: /opt/redis_backup
+    state: directory
+  when: redis_backup is defined
+
+- name: "Create Backup job that runs every {{ redis_backup_frequency }} minutes"
+  cron:
+    name: "Backup dump.rdb"
+    minute: "{{ redis_backup_frequency }}"
+    job: rsync -av /var/lib/redis/dump.rdb /opt/redis_backup/dump.rdb.`date +\%Y-\%m-\%d-\%I-\%M-\%S`
+  when: redis_backup is defined
+
+- name: Ensure only 3 versions of the backup is kept
+  cron:
+    name: "Clean up Backup files"
+    minute: "*/10"
+    job: "find /opt/redis_backup -name 'dump*' -type f -mmin +{{ redis_backup_clean }} -delete"
+  when: redis_backup is defined
