@@ -100,6 +100,15 @@
     mode: 0770
   when: redis_notification_script is defined
 
+- name: Ubuntu-20 | copy the Python notification-script script
+  template:
+    src: {{ redis_notification_python_script }}
+    dest: /var/redis/notify.py
+    group: redis
+    owner: redis
+    mode: 0770
+  when: redis_notification_python_script is defined
+
 - name: Ubuntu-20 | copy the client-reconfig-script script
   template:
     src: {{ redis_client_reconfig_script }}
